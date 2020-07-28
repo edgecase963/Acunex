@@ -5,8 +5,17 @@ import matplotlib.pyplot as plt
 
 
 
+def expand_list(lst):
+    result = []
+    for i in range(len(lst)):
+        result.append(lst[i])
+        if i and i != len(lst)-1:
+            result.append(lst[i])
+    return result
+
+
 class Trainer():
-    def __init__(self, model, optimizer="adam", learning_rate="default", reduction='mean'):
+    def __init__(self, model, optimizer="adam", learning_rate="default", reduction="mean"):
         self.optimizers = {
             "adam": torch.optim.Adam,
             "adadelta": torch.optim.Adadelta,
@@ -80,8 +89,39 @@ class Trainer():
 
 class Network(torch.nn.Sequential):
 
-    def add_layer(self, name, input_shape, output_shape):
-        self.add_module( name, torch.nn.Linear(input_shape, output_shape) )
+    trainer_setup = False
+    trainer = None
+
+    def setup_trainer(self, optimizer="adam", learning_rate="default", reduction="mean"):
+        self.trainer = Trainer(self, optimizer=optimizer, learning_rate=learning_rate, reduction=reduction)
+        self.trainer_setup = True
+
+
+
+class Network_Builder():
+    def __init__(self):
+        self.layers = []
+        self.network = None
+
+    def output_size(self):
+        return self.layers[len(self.layers)-1][1]
+
+    def build(self):
+        if not self.layers:
+            return
+        self.network = Network(*self.layers)
+        return self.network
+
+    def add_linear_layers(self, layers):
+        if isinstance(layers, list):
+            mList = expand_list(layers)
+            mList = iter(mList)
+            for i in mList:
+                self.layers.append(torch.nn.Linear(i, next(mList)))
+
+    def add_sigmoid(self):
+        self.layers.append(torch.nn.Sigmoid())
+
 
 
 if __name__ == "__main__":
@@ -90,9 +130,16 @@ if __name__ == "__main__":
 
     network = Network(
         torch.nn.Linear(2, 3),
-        torch.nn.Sigmoid(),
         torch.nn.Linear(3, 1),
+        torch.nn.Sigmoid(),
     )
+
+    netBuilder = Network_Builder()
+
+    netBuilder.add_linear_layers([2, 3, 1])
+    netBuilder.add_sigmoid()
+
+    network = netBuilder.build()
 
     trainer = Trainer(network)
 
@@ -100,7 +147,7 @@ if __name__ == "__main__":
     epochList = []
 
     for i in range(10000):
-        loss = trainer.trainUntil(inputData, targetData, iterations=20)
+        loss = trainer.trainUntil(inputData, targetData, iterations=50, target_loss=0.001)
         print(trainer.iterations, loss)
         lossList.append(loss)
         epochList.append(trainer.iterations)
