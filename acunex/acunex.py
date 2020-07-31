@@ -14,6 +14,21 @@ def expand_list(lst):
     return result
 
 
+def graph_loss(net_trainer, interval=50):
+    if not net_trainer.history:
+        return
+
+    epochList = [i for i in net_trainer.history]
+    lossList = [net_trainer.history[i] for i in net_trainer.history]
+    netLen = len( [i for i in net_trainer.model.children()] )
+
+    plt.plot(epochList, lossList)
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Optimizer: {} | Layers: {}".format(net_trainer.optimizer_name, netLen))
+    plt.show()
+
+
 class Trainer():
     def __init__(self, model, optimizer="adam", learning_rate="default", reduction="mean"):
         self.optimizers = {
@@ -106,10 +121,39 @@ class Network_Builder():
     def output_size(self):
         return self.layers[len(self.layers)-1][1]
 
+    def adjust_layers(self):
+        prevLayer = None
+        for layer in self.layers:
+            if prevLayer:
+                if "input" in layer and "output" in layer:
+                    if "output" in prevLayer:
+                        if prevLayer["output"] != layer["input"]:
+                            prevLayer["output"] = layer["input"]
+                    prevLayer = layer
+            else:
+                prevLayer = layer
+
+    def build_layers(self):
+        builtList = []
+        for layer in self.layers:
+            newLayer = None
+            if layer["type"] == "linear":
+                newLayer = torch.nn.Linear(layer["input"], layer["output"])
+            elif layer["type"] == "sigmoid":
+                newLayer = torch.nn.Sigmoid()
+
+            if newLayer:
+                builtList.append(newLayer)
+        return builtList
+
     def build(self):
         if not self.layers:
             return
-        self.network = Network(*self.layers)
+
+        self.adjust_layers()   # Should adjust the weights so each layer matches correctly
+
+        builtList = self.build_layers()
+        self.network = Network(*builtList)
         return self.network
 
     def add_linear_layers(self, layers):
@@ -117,10 +161,16 @@ class Network_Builder():
             mList = expand_list(layers)
             mList = iter(mList)
             for i in mList:
-                self.layers.append(torch.nn.Linear(i, next(mList)))
+                try:
+                    newLayer = {"input": i, "output": next(mList), "type": "linear"}
+                    self.layers.append(newLayer)
+                except StopIteration:
+                    newLayer = {"input": i, "output": i, "type": "linear"}
+                    self.layers.append(newLayer)
 
     def add_sigmoid(self):
-        self.layers.append(torch.nn.Sigmoid())
+        newLayer = {"type": "sigmoid"}
+        self.layers.append(newLayer)
 
 
 
@@ -136,8 +186,9 @@ if __name__ == "__main__":
 
     netBuilder = Network_Builder()
 
-    netBuilder.add_linear_layers([2, 3, 1])
+    netBuilder.add_linear_layers([2])
     netBuilder.add_sigmoid()
+    netBuilder.add_linear_layers([3, 1])
 
     network = netBuilder.build()
 
@@ -146,18 +197,16 @@ if __name__ == "__main__":
     lossList = []
     epochList = []
 
-    for i in range(10000):
+    while True:
         loss = trainer.trainUntil(inputData, targetData, iterations=50, target_loss=0.001)
         print(trainer.iterations, loss)
         lossList.append(loss)
         epochList.append(trainer.iterations)
+        if trainer.iterations >= 30000:
+            break
         if loss < 0.001:
             break
-    for epoch in trainer.history:
-        plt.plot(epochList, lossList)
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.title("Optimizer: {}".format(trainer.optimizer_name))
-    plt.show()
+
+    graph_loss(trainer)
 
     print(network(inputData))
